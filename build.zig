@@ -21,9 +21,7 @@ pub fn build(b: *std.Build) void {
 
     const docs_obj = b.addObject(.{
         .name = "zircon",
-        .root_source_file = b.path("src/zircon.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = zircon_mod,
     });
 
     const docs = docs_obj.getEmittedDocs();
