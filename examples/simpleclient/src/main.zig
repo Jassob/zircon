@@ -100,10 +100,11 @@ fn spawnThread(_: zircon.Message) bool {
 /// This is where we define the logic of our IRC client (handling commands).
 fn clientWorker(client: *zircon.Client) !void {
     const allocator = debug_allocator.allocator();
-    const stdin_reader = std.io.getStdIn().reader();
+    var input_buf: [1024]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().reader(&input_buf).interface;
     while (true) {
         std.debug.print("[#] <{s}>: ", .{nick});
-        const raw_command = try stdin_reader.readUntilDelimiterAlloc(allocator, '\n', 512);
+        const raw_command = try stdin_reader.adaptToOldInterface().readUntilDelimiterAlloc(allocator, '\n', 512);
         defer allocator.free(raw_command);
 
         const command = Command.parse(raw_command) orelse continue;
