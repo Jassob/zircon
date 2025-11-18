@@ -246,7 +246,9 @@ pub const Client = struct {
 
         // Handle the PING messages ourselves.
         if (std.mem.eql(u8, raw_msg[0..4], "PING")) {
-            const index = std.mem.indexOf(u8, raw_msg, ":").?;
+            const colon_idx = std.mem.indexOf(u8, raw_msg, ":");
+            const space_idx = std.mem.indexOf(u8, raw_msg, " ");
+            const index = colon_idx orelse space_idx.?;
             const id = raw_msg[index + 1 ..];
             try self.pong(id);
             return;
