@@ -6,6 +6,7 @@ const tls = @import("tls");
 const utils = @import("utils.zig");
 pub const Message = @import("message.zig").Message;
 pub const ProtoMessage = @import("message.zig").ProtoMessage;
+const AllocatingWriter = std.io.Writer.Allocating;
 
 const default_port = 6667;
 const delimiter = "\r\n";
@@ -16,7 +17,7 @@ pub const Client = struct {
     alloc: std.mem.Allocator,
     stream: std.net.Stream,
     connection: tls.Connection,
-    buf: std.ArrayList(u8),
+    buf: AllocatingWriter,
     replies: std.ArrayList(Message),
     mutex: std.Thread.Mutex,
     cond: std.Thread.Condition,
@@ -64,7 +65,7 @@ pub const Client = struct {
             .alloc = alloc,
             .stream = undefined,
             .connection = undefined,
-            .buf = std.ArrayList(u8).initCapacity(alloc, max_msg_len) catch |err| {
+            .buf = AllocatingWriter.initCapacity(alloc, max_msg_len) catch |err| {
                 utils.debug("Memory allocation failed: {}", .{err});
                 return ClientError.MemoryAllocationFailed;
             },
@@ -78,7 +79,7 @@ pub const Client = struct {
     /// Deinitializes the client, freeing resources.
     pub fn deinit(self: *Client) void {
         self.disconnect();
-        self.buf.deinit(self.alloc);
+        self.buf.deinit();
         self.replies.deinit(self.alloc);
     }
 
@@ -96,16 +97,12 @@ pub const Client = struct {
 
         // TLS handshake process wrapping a TCP stream.
         if (self.cfg.tls) {
-            var input_buf: [tls.input_buffer_len]u8 = undefined;
-            var output_buf: [tls.output_buffer_len]u8 = undefined;
-            var reader = self.stream.reader(&input_buf);
-            var writer = self.stream.writer(&output_buf);
             var root_ca = tls.config.cert.fromSystem(self.alloc) catch |err| {
                 utils.debug("Could not get root CA: {}", .{err});
                 return ClientError.TlsHandshakeFailed;
             };
             defer root_ca.deinit(self.alloc);
-            self.connection = tls.client(reader.interface(), &writer.interface, .{
+            self.connection = tls.clientFromStream(self.stream, .{
                 .host = self.cfg.server,
                 .root_ca = root_ca,
             }) catch |err| {
@@ -306,25 +303,24 @@ pub const Client = struct {
                 true => {
                     var buf: [tls.input_buffer_len]u8 = undefined;
                     var reader = self.connection.reader(&buf).interface;
-                    var oldReader = reader.adaptToOldInterface();
-                    oldReader.streamUntilDelimiter(self.buf.writer(self.alloc), '\n', max_msg_len) catch return;
+                    _ = reader.streamDelimiter(&self.buf.writer, '\n') catch return;
                 },
                 false => {
                     var buf: [1024]u8 = undefined;
                     var reader = self.stream.reader(&buf);
-                    var oldReader = reader.interface().adaptToOldInterface();
-                    oldReader.streamUntilDelimiter(self.buf.writer(self.alloc), '\n', max_msg_len) catch return;
+                    _ = reader.interface().streamDelimiter(&self.buf.writer, '\n') catch return;
                 },
             }
 
             // If there's nothing read from the stream, the connection was closed.
-            if (self.buf.items.len == 0) {
+            const content = self.buf.written();
+            if (content.len == 0) {
                 utils.debug("Connection Closed\n", .{});
                 return;
             }
 
             // Handle the message previously read and stored in the buffer.
-            try self.handleMessage(self.buf.items[0..self.buf.items.len], loop_config);
+            try self.handleMessage(content, loop_config);
 
             // Clear the client's buffer at the end of the loop.
             // This is crucial to avoid corrupted messages.
