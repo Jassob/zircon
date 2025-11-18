@@ -100,10 +100,11 @@ pub const Client = struct {
             var output_buf: [tls.output_buffer_len]u8 = undefined;
             var reader = self.stream.reader(&input_buf);
             var writer = self.stream.writer(&output_buf);
-            const root_ca = tls.config.cert.fromSystem(self.alloc) catch |err| {
+            var root_ca = tls.config.cert.fromSystem(self.alloc) catch |err| {
                 utils.debug("Could not get root CA: {}", .{err});
                 return ClientError.TlsHandshakeFailed;
             };
+            defer root_ca.deinit(self.alloc);
             self.connection = tls.client(reader.interface(), &writer.interface, .{
                 .host = self.cfg.server,
                 .root_ca = root_ca,
