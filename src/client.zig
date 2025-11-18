@@ -303,7 +303,7 @@ pub const Client = struct {
         while (true) {
             switch (self.cfg.tls) {
                 true => {
-                    var buf: [tls.input_buffer_len]u8 = undefined;
+                    var buf: [max_msg_len]u8 = undefined;
                     var reader = self.connection.reader(&buf);
                     _ = reader.interface.streamDelimiter(&self.buf.writer, '\n') catch return;
                 },
