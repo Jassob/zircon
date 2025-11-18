@@ -304,8 +304,8 @@ pub const Client = struct {
             switch (self.cfg.tls) {
                 true => {
                     var buf: [tls.input_buffer_len]u8 = undefined;
-                    var reader = self.connection.reader(&buf).interface;
-                    _ = reader.streamDelimiter(&self.buf.writer, '\n') catch return;
+                    var reader = self.connection.reader(&buf);
+                    _ = reader.interface.streamDelimiter(&self.buf.writer, '\n') catch return;
                 },
                 false => {
                     var buf: [1024]u8 = undefined;
